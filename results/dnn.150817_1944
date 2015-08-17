@@ -1,0 +1,13 @@
+n_hidden = [225, 144]
+max_epochs = 30
+activation=hiddenlayer.ReLU
+
+epoch 20 avg train cost: 0.100541897118
+valid score: 0.0254
+epoch 21 avg train cost: 0.0978591069579
+valid score: 0.0254
+epoch 20 had best valid score: 0.0254
+and test score: 0.0257
+Optimization complete.
+ ran for 1.66m
+

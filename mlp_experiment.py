@@ -132,7 +132,7 @@ def do_stuff():
     for epoch in range(n_epochs):
         for minibatch_index in xrange(n_train_batches):
             minibatch_avg_cost = train_model(minibatch_index)
-        print('epoch () last minibatch_avg_cost: {}'.format(
+        print('epoch {} last minibatch_avg_cost: {}'.format(
             epoch, minibatch_avg_cost))
         valid_losses = [validate_model(i) for i
                        in xrange(n_valid_batches)]

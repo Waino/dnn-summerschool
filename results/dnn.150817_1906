@@ -1,0 +1,13 @@
+n_hidden = [225, 144]
+max_epochs = 30
+activation = tanh
+
+epoch 20 avg train cost: 0.133819684386
+valid score: 0.0273
+epoch 21 avg train cost: 0.130324944854
+valid score: 0.0274
+epoch 20 had best valid score: 0.0273
+and test score: 0.0286
+Optimization complete.
+ ran for 1.63m
+

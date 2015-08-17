@@ -237,5 +237,7 @@ class DNN(object):
 
         # the parameters of the model are the parameters of the layers it is
         # made out of
-        self.params = [layer.params for layer
-                       in self.hiddenLayer + self.softmaxLayer]
+        self.params = []
+        for layer in self.hiddenLayers:
+            self.params.extend(layer.params)
+        self.params.extend(self.softmaxLayer.params)

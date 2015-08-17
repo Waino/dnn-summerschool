@@ -15,7 +15,7 @@ patience_epochs = 10
 learning_rate=0.01
 L1_reg=0.00
 L2_reg=0.0001
-activation=T.nnet.relu
+activation=hiddenlayer.ReLU
 
 
 def lift(data):

@@ -4,6 +4,13 @@ import numpy as np
 
 import softmax
 
+try:
+    ReLU = T.nnet.relu
+except AttributeError:
+    # My old theano doesn't have relu
+    def ReLU(x, alpha=0):
+        return T.maximum(x, alpha * x)
+
 
 class HiddenLayer(object):
     def __init__(self, rng, inpt, n_in, n_out, W=None, b=None,
@@ -48,7 +55,7 @@ class HiddenLayer(object):
         #        We have no info for other function, so we use the same as
         #        tanh.
         if W is None:
-            if activation == theano.tensor.nnet.relu:
+            if activation == ReLU:
                 inner = 2.
                 multiplier = 1
             if activation == theano.tensor.nnet.sigmoid:

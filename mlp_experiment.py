@@ -50,7 +50,7 @@ def do_stuff():
     classifier = hiddenlayer.MLP(
         rng=rng,
         inpt=x,
-        n_in=32 * 32,
+        n_in=32 * 32 * 3,
         n_hidden=n_hidden,
         n_out=100
     )

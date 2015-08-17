@@ -150,6 +150,7 @@ def do_stuff():
         print('valid score: {}'.format(valid_score))
 
         if best_valid is None or valid_score < best_valid:
+            best_valid = valid_score
             test_losses = [test_model(i) for i
                         in xrange(n_test_batches)]
             best_test = np.mean(test_losses)

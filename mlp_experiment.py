@@ -10,7 +10,8 @@ import data_mnist as dataset
 
 batch_size = 20
 n_hidden = 225
-n_epochs = 10
+max_epochs = 20
+patience_epochs = 10
 learning_rate=0.01
 L1_reg=0.00
 L2_reg=0.0001
@@ -129,21 +130,34 @@ def do_stuff():
     print '... training'
 
     start_time = timeit.default_timer()
+    done_looping = False
+    best_valid = None
+    best_test = None
+    best_epoch = None
 
-    for epoch in range(n_epochs):
-        for minibatch_index in xrange(n_train_batches):
-            minibatch_avg_cost = train_model(minibatch_index)
-        print('epoch {} last minibatch_avg_cost: {}'.format(
-            epoch, minibatch_avg_cost))
+    for epoch in xrange(max_epochs):
+        if done_looping:
+            break
+
+        train_costs = [train_model(i) for i
+                       in xrange(n_train_batches)]
+        train_score = np.mean(train_costs)
+        print('epoch {} avg train cost: {}'.format(epoch, train_score))
+
         valid_losses = [validate_model(i) for i
                        in xrange(n_valid_batches)]
         valid_score = np.mean(valid_losses)
         print('valid score: {}'.format(valid_score))
 
-        test_losses = [test_model(i) for i
-                       in xrange(n_test_batches)]
-        test_score = np.mean(test_losses)
-        print('test score: {}'.format(test_score))
+        if best_valid is None or valid_score < best_valid:
+            test_losses = [test_model(i) for i
+                        in xrange(n_test_batches)]
+            best_test = np.mean(test_losses)
+            best_epoch = epoch
+        elif epoch > patience_epochs:
+            break
+    print('epoch {} had best valid score: {}'.format(best_epoch, best_valid))
+    print('and test score: {}'.format(best_test))
 
     end_time = timeit.default_timer()
     print(('Optimization complete.'))

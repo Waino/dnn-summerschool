@@ -5,7 +5,8 @@ import timeit
 
 import hiddenlayer
 
-import data_cifar as dataset
+#import data_cifar as dataset
+import data_mnist as dataset
 
 batch_size = 20
 n_hidden = 225

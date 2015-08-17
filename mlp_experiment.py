@@ -62,9 +62,9 @@ def do_stuff():
     classifier = hiddenlayer.MLP(
         rng=rng,
         inpt=x,
-        n_in=32 * 32 * 3,
+        n_in=dataset.input_shape,
         n_hidden=n_hidden,
-        n_out=100
+        n_out=dataset.output_shape
     )
 
     # the cost we minimize during training is the negative log likelihood of

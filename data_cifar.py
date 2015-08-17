@@ -4,6 +4,8 @@ import cPickle as pickle
 data_dir = 'data/cifar-10-batches-py/'
 train_batches = range(1, 5)
 validation_batches = [5]
+input_shape = 32 * 32 * 3
+output_shape = 10
 
 
 def load_batches(batches):

@@ -1,6 +1,9 @@
 import cPickle as pickle
 
 data_dir = 'data/'
+input_shape = 28 * 28
+output_shape = 10
+
 
 _whole_package = pickle.load(open('{}mnist.pkl'.format(data_dir)))
 

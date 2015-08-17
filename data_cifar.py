@@ -12,7 +12,7 @@ def load_batches(batches):
     for batch in batches:
         tmp = pickle.load(open('{}data_batch_{}'.format(data_dir, batch)))
         data.append(tmp['data'])
-        labels.append(tmp['fine_labels'])
+        labels.append(tmp['labels'])
     return (np.concat(*data),
             np.concat(*labels))
 
@@ -27,4 +27,4 @@ def load_validation_data():
 
 def load_test_data():
     tmp = pickle.load(open('{}test_batch'.format(data_dir)))
-    return (tmp['data'], tmp['fine_labels'])
+    return (tmp['data'], tmp['labels'])

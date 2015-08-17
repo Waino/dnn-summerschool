@@ -6,8 +6,7 @@ import timeit
 
 import hiddenlayer
 
-traindata_filename = 'data/cifar-100-python/train'
-testdata_filename = 'data/cifar-100-python/test'
+data_filename = 'data/mnist.pkl'
 batch_size = 20
 n_hidden = 225
 n_epochs = 10
@@ -123,7 +122,7 @@ def do_stuff():
         print('last minibatch_avg_cost: {}'.format(minibatch_avg_cost))
         test_losses = [test_model(i) for i
                         in xrange(n_test_batches)]
-        test_score = numpy.mean(test_losses)
+        test_score = np.mean(test_losses)
         print('test score: {}'.format(test_score))
 
     end_time = timeit.default_timer()

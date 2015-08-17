@@ -10,7 +10,7 @@ import data_mnist as dataset
 
 batch_size = 20
 n_hidden = 225
-max_epochs = 20
+max_epochs = 30
 patience_epochs = 10
 learning_rate=0.01
 L1_reg=0.00

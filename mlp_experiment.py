@@ -1,12 +1,12 @@
 import theano
 import theano.tensor as T
 import numpy as np
-import cPickle as pickle
 import timeit
 
 import hiddenlayer
 
-data_filename = 'data/mnist.pkl'
+import data_cifar as dataset
+
 batch_size = 20
 n_hidden = 225
 n_epochs = 10
@@ -14,30 +14,34 @@ learning_rate=0.01
 L1_reg=0.00
 L2_reg=0.0001
 
-def load_data(filename):
-    tmp = pickle.load(open(filename))
-    return (tmp['data'], tmp['fine_labels'])
-
 
 def lift(data):
     return theano.shared(np.asarray(data,
                                     dtype=theano.config.floatX),
                          borrow=True)
 
+
 def do_stuff():
-    train_set_x, train_set_y = load_data(traindata_filename)
+    train_set_x, train_set_y = dataset.load_train_data()
     train_set_x = lift(train_set_x)
     train_set_y = lift(train_set_y)
     # needs to be float on GPU, but int when comparing labels and predictions
     train_set_y = T.cast(train_set_y, 'int32')
 
-    test_set_x, test_set_y = load_data(testdata_filename)
+    valid_set_x, valid_set_y = dataset.load_validation_data()
+    valid_set_x = lift(valid_set_x)
+    valid_set_y = lift(valid_set_y)
+    # needs to be float on GPU, but int when comparing labels and predictions
+    valid_set_y = T.cast(valid_set_y, 'int32')
+
+    test_set_x, test_set_y = dataset.load_test_data()
     test_set_x = lift(test_set_x)
     test_set_y = lift(test_set_y)
     # needs to be float on GPU, but int when comparing labels and predictions
     test_set_y = T.cast(test_set_y, 'int32')
 
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
+    n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] / batch_size
     n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
 
     ######################
@@ -100,6 +104,15 @@ def do_stuff():
         }
     )
 
+    validate_model = theano.function(
+        inputs=[index],
+        outputs=classifier.errors(y),
+        givens={
+            x: valid_set_x[index * batch_size:(index + 1) * batch_size],
+            y: valid_set_y[index * batch_size:(index + 1) * batch_size]
+        }
+    )
+
     test_model = theano.function(
         inputs=[index],
         outputs=classifier.errors(y),
@@ -119,9 +132,15 @@ def do_stuff():
     for epoch in range(n_epochs):
         for minibatch_index in xrange(n_train_batches):
             minibatch_avg_cost = train_model(minibatch_index)
-        print('last minibatch_avg_cost: {}'.format(minibatch_avg_cost))
+        print('epoch () last minibatch_avg_cost: {}'.format(
+            epoch, minibatch_avg_cost))
+        valid_losses = [validate_model(i) for i
+                       in xrange(n_valid_batches)]
+        valid_score = np.mean(valid_losses)
+        print('valid score: {}'.format(valid_score))
+
         test_losses = [test_model(i) for i
-                        in xrange(n_test_batches)]
+                       in xrange(n_test_batches)]
         test_score = np.mean(test_losses)
         print('test score: {}'.format(test_score))
 

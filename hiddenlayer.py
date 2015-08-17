@@ -48,16 +48,25 @@ class HiddenLayer(object):
         #        We have no info for other function, so we use the same as
         #        tanh.
         if W is None:
+            if activation == theano.tensor.nnet.relu:
+                inner = 2.
+                multiplier = 1
+            if activation == theano.tensor.nnet.sigmoid:
+                inner = 6.
+                multiplier = 4
+            else:
+                inner = 6.
+                multiplier = 1
             W_values = np.asarray(
                 rng.uniform(
-                    low=-np.sqrt(6. / (n_in + n_out)),
-                    high=np.sqrt(6. / (n_in + n_out)),
+                    low=-np.sqrt(inner / (n_in + n_out)),
+                    high=np.sqrt(inner / (n_in + n_out)),
                     size=(n_in, n_out)
                 ),
                 dtype=theano.config.floatX
             )
-            if activation == theano.tensor.nnet.sigmoid:
-                W_values *= 4
+            if multiplier != 1:
+                W_values *= multiplier
 
             W = theano.shared(value=W_values, name='W_hidden', borrow=True)
 
@@ -165,7 +174,8 @@ class DNN(object):
     but with an additional hidden layer.
     """
 
-    def __init__(self, rng, inpt, n_in, n_hidden, n_out):
+    def __init__(self, rng, inpt, n_in, n_hidden, n_out,
+                 activation=T.tanh):
         """Initialize the parameters for the multilayer perceptron
 
         :type rng: numpy.random.RandomState
@@ -197,7 +207,7 @@ class DNN(object):
                 inpt=output_of_previous,
                 n_in=size_of_previous,
                 n_out=size,
-                activation=T.tanh
+                activation=activation
             ))
             output_of_previous = self.hiddenLayers[-1].output
             size_of_previous = size

@@ -15,6 +15,7 @@ patience_epochs = 10
 learning_rate=0.01
 L1_reg=0.00
 L2_reg=0.0001
+activation=T.nnet.relu
 
 
 def lift(data):
@@ -65,7 +66,8 @@ def do_stuff():
         inpt=x,
         n_in=dataset.input_shape,
         n_hidden=n_hidden,
-        n_out=dataset.output_shape
+        n_out=dataset.output_shape,
+        activation=activation
     )
 
     # the cost we minimize during training is the negative log likelihood of

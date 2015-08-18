@@ -14,8 +14,7 @@ class TextIterator:
             self.source = gzip.open(source, 'r')
         else:
             self.source = open(source, 'r')
-        with open(source_dict, 'rb') as f:
-            self.source_dict = pkl.load(f)
+        self.source_dict = source_dict
 
         self.batch_size = batch_size
         self.maxlen = maxlen

@@ -535,20 +535,23 @@ def train(dim_word=100, # word vector dimensionality
           validFreq=1000,
           saveFreq=1000, # save the parameters after every saveFreq updates
           sampleFreq=100, # generate some samples after every sampleFreq updates
-          dataset='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz', 
-          valid_dataset='../data/dev/newstest2011.en.tok', 
-          dictionary='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz.pkl',
+          dataset='../data/morph/finnish.clean.train',
+          valid_dataset='../data/morph/finnish.clean.test',
+          dictionary='../data/morph/morph.vocab',
           use_dropout=False,
           reload_=False):
 
     # Model options
     model_options = locals().copy()
 
-    with open(dictionary, 'rb') as f:
-        worddicts = pkl.load(f)
+    worddicts = dict()
     worddicts_r = dict()
-    for kk, vv in worddicts.iteritems():
-        worddicts_r[vv] = kk
+    with open(dictionary, 'rb') as f:
+        for (i, line) in enumerate(f):
+            word = line.strip()
+            code = i + 2
+            worddicts_r[code] = word
+            worddicts[word] = code
 
     # reload options
     if reload_ and os.path.exists(saveto):
@@ -557,12 +560,12 @@ def train(dim_word=100, # word vector dimensionality
 
     print 'Loading data'
     train = TextIterator(dataset, 
-                         dictionary,
+                         worddicts,
                          n_words_source=n_words, 
                          batch_size=batch_size,
                          maxlen=maxlen)
     valid = TextIterator(valid_dataset, 
-                         dictionary,
+                         worddicts,
                          n_words_source=n_words, 
                          batch_size=valid_batch_size,
                          maxlen=maxlen)

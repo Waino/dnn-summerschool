@@ -299,6 +299,7 @@ def param_init_lstm(options, params, prefix='lstm', nin=None, dim=None, hiero=Fa
         dim = options['dim_proj']
     if not hiero:
         W = numpy.concatenate([norm_weight(nin,dim),
+                               norm_weight(nin,dim),   # one more gate
                                norm_weight(nin,dim)], axis=1)
         params[_p(prefix,'W')] = W
         n_gates = 3

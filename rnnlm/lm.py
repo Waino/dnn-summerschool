@@ -245,9 +245,10 @@ def gru_layer(tparams, state_below, options, prefix='gru',
         # Waino: m_ = mask
         # Waino: x_ = state_below_ (concatenation of Wr * x + br, Wu * x + bu)
         # Waino: xx_= state_belowx (W * x + b)
-        # Waino: h_ = init_state
+        # Waino: h_ = h at previous timestep, initialized to init_state (h_(t-1))
         # Waino: U  = U  (concatenated Ur, Uu)
         # Waino: Ux = Ux
+        # Waino: h = h_t
         preact = tensor.dot(h_, U)
         preact += x_
 
@@ -262,6 +263,7 @@ def gru_layer(tparams, state_below, options, prefix='gru',
 
         h = tensor.tanh(preactx)
 
+        # Waino: u is negated compared to slides (doesn't matter due to symmetry)
         h = u * h_ + (1. - u) * h
         h = m_[:,None] * h + (1. - m_)[:,None] * h_
 
@@ -340,29 +342,34 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     U = tparams[_p(prefix, 'U')]
     Ux = tparams[_p(prefix, 'Ux')]
 
-    def _step_slice(m_, x_, xx_, h_, U, Ux):
+    def _step_slice(m_, x_, xx_, h_, h_out_, U, Ux):
         # Waino: m_ = mask
         # Waino: x_ = state_below
         # Waino: xx_= state_belowx
-        # Waino: h_ = init_state
+        # Waino: h_ = h at prev time step
+        # h_out_: ignored
         # Waino: U  = U  (concatenated Us)
         # Waino: Ux = Ux
         preact = tensor.dot(h_, U)
         preact += x_
 
-        r = tensor.nnet.sigmoid(_slice(preact, 0, dim))
-        u = tensor.nnet.sigmoid(_slice(preact, 1, dim))
+        i = tensor.nnet.sigmoid(_slice(preact, 0, dim))
+        f = tensor.nnet.sigmoid(_slice(preact, 1, dim))
+        o = tensor.nnet.sigmoid(_slice(preact, 2, dim))
 
         preactx = tensor.dot(h_, Ux)
-        preactx = preactx * r
+        # no longer applying r gate
         preactx = preactx + xx_
 
         h = tensor.tanh(preactx)
 
-        h = u * h_ + (1. - u) * h
+        #h = u * h_ + (1. - u) * h  # GRU
+        h = f * h_ + i * h          # LSTM
+        h_out = o * tensor.tanh(h)
         h = m_[:,None] * h + (1. - m_)[:,None] * h_
+        h_out = m_[:,None] * h_out + (1. - m_)[:,None] * h_out_
 
-        return h#, r, u, preact, preactx
+        return h, h_out #, r, u, preact, preactx
 
     seqs = [mask, state_below_, state_belowx]
     _step = _step_slice
@@ -377,13 +384,13 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     else:
         rval, updates = theano.scan(_step, 
                                     sequences=seqs,
-                                    outputs_info = [init_state],
+                                    outputs_info = [init_state, init_state],
                                     non_sequences = shared_vars,
                                     name=_p(prefix, '_layers'),
                                     n_steps=nsteps,
                                     profile=profile,
                                     strict=True)
-    rval = [rval]
+    rval = [rval[1]]
     return rval
 
 # initialize all parameters
@@ -429,6 +436,7 @@ def build_model(tparams, options):
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
                                             mask=x_mask)
+    # Waino: unwraps the whole layer output 
     proj_h = proj[0]
 
     # compute word probabilities
@@ -629,7 +637,7 @@ def sgd(lr, tparams, grads, x, mask, y, cost):
 
 def train(dim_word=100, # word vector dimensionality
           dim=1000, # the number of LSTM units
-          encoder='gru',
+          encoder='lstm',
           patience=10,
           max_epochs=5000,
           dispFreq=100,

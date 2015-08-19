@@ -212,6 +212,7 @@ def param_init_gru(options, params, prefix='gru', nin=None, dim=None, hiero=Fals
 
 def gru_layer(tparams, state_below, options, prefix='gru', 
               mask=None, one_step=False, init_state=None, **kwargs):
+    # Waino: state_below: x from the slides (embedding of previous word)
     if one_step:
         assert init_state, 'previous state must be provided'
 
@@ -232,13 +233,21 @@ def gru_layer(tparams, state_below, options, prefix='gru',
             return _x[:, :, n*dim:(n+1)*dim]
         return _x[:, n*dim:(n+1)*dim]
 
+    # Waino: these are known at train time without needing to scan,
+    # Waino: (x:s are known, and W:s are constant during the minibatch)
+    # Waino: and thus can be calculated for all words in one operation
     state_below_ = tensor.dot(state_below, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')]
     state_belowx = tensor.dot(state_below, tparams[_p(prefix, 'Wx')]) + tparams[_p(prefix, 'bx')]
     U = tparams[_p(prefix, 'U')]
     Ux = tparams[_p(prefix, 'Ux')]
 
     def _step_slice(m_, x_, xx_, h_, U, Ux):
-        # Waino: big-U is concatenation of all U:s, later sliced
+        # Waino: m_ = mask
+        # Waino: x_ = state_below_ (concatenation of Wr * x + br, Wu * x + bu)
+        # Waino: xx_= state_belowx (W * x + b)
+        # Waino: h_ = init_state
+        # Waino: U  = U  (concatenated Ur, Uu)
+        # Waino: Ux = Ux
         preact = tensor.dot(h_, U)
         preact += x_
 
@@ -246,6 +255,7 @@ def gru_layer(tparams, state_below, options, prefix='gru',
         u = tensor.nnet.sigmoid(_slice(preact, 1, dim))
 
         # Waino: maybe Ux is just U on the slides?
+        # Waino: elementwise mult can be moved outside the matrix mult
         preactx = tensor.dot(h_, Ux)
         preactx = preactx * r
         preactx = preactx + xx_
@@ -331,6 +341,12 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     Ux = tparams[_p(prefix, 'Ux')]
 
     def _step_slice(m_, x_, xx_, h_, U, Ux):
+        # Waino: m_ = mask
+        # Waino: x_ = state_below
+        # Waino: xx_= state_belowx
+        # Waino: h_ = init_state
+        # Waino: U  = U  (concatenated Us)
+        # Waino: Ux = Ux
         preact = tensor.dot(h_, U)
         preact += x_
 

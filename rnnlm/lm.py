@@ -71,6 +71,7 @@ def load_params(path, params):
 # layers: 'name': ('parameter initializer', 'feedforward')
 layers = {'ff': ('param_init_fflayer', 'fflayer'), 
           'gru': ('param_init_gru', 'gru_layer'),
+          'lstm': ('param_init_lstm', 'lstm_layer'),
           }
 
 def get_layer(name):
@@ -196,6 +197,7 @@ def param_init_gru(options, params, prefix='gru', nin=None, dim=None, hiero=Fals
                                norm_weight(nin,dim)], axis=1)
         params[_p(prefix,'W')] = W
         params[_p(prefix,'b')] = numpy.zeros((2 * dim,)).astype('float32')
+    # Waino: big-U is concatenation of all U:s, later sliced
     U = numpy.concatenate([ortho_weight(dim),
                            ortho_weight(dim)], axis=1)
     params[_p(prefix,'U')] = U
@@ -209,6 +211,99 @@ def param_init_gru(options, params, prefix='gru', nin=None, dim=None, hiero=Fals
     return params
 
 def gru_layer(tparams, state_below, options, prefix='gru', 
+              mask=None, one_step=False, init_state=None, **kwargs):
+    if one_step:
+        assert init_state, 'previous state must be provided'
+
+    nsteps = state_below.shape[0]
+
+    if state_below.ndim == 3:
+        n_samples = state_below.shape[1]
+    else:
+        n_samples = state_below.shape[0]
+
+    dim = tparams[_p(prefix,'Ux')].shape[1]
+
+    if mask == None:
+        mask = tensor.alloc(1., state_below.shape[0], 1)
+
+    def _slice(_x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n*dim:(n+1)*dim]
+        return _x[:, n*dim:(n+1)*dim]
+
+    state_below_ = tensor.dot(state_below, tparams[_p(prefix, 'W')]) + tparams[_p(prefix, 'b')]
+    state_belowx = tensor.dot(state_below, tparams[_p(prefix, 'Wx')]) + tparams[_p(prefix, 'bx')]
+    U = tparams[_p(prefix, 'U')]
+    Ux = tparams[_p(prefix, 'Ux')]
+
+    def _step_slice(m_, x_, xx_, h_, U, Ux):
+        # Waino: big-U is concatenation of all U:s, later sliced
+        preact = tensor.dot(h_, U)
+        preact += x_
+
+        r = tensor.nnet.sigmoid(_slice(preact, 0, dim))
+        u = tensor.nnet.sigmoid(_slice(preact, 1, dim))
+
+        # Waino: maybe Ux is just U on the slides?
+        preactx = tensor.dot(h_, Ux)
+        preactx = preactx * r
+        preactx = preactx + xx_
+
+        h = tensor.tanh(preactx)
+
+        h = u * h_ + (1. - u) * h
+        h = m_[:,None] * h + (1. - m_)[:,None] * h_
+
+        return h#, r, u, preact, preactx
+
+    seqs = [mask, state_below_, state_belowx]
+    _step = _step_slice
+    shared_vars = [tparams[_p(prefix, 'U')], 
+                     tparams[_p(prefix, 'Ux')]]
+
+    if init_state is None:
+        init_state = tensor.unbroadcast(tensor.alloc(0., n_samples, dim), 0)
+
+    if one_step:
+        rval = _step(*(seqs+[init_state]+shared_vars))
+    else:
+        rval, updates = theano.scan(_step, 
+                                    sequences=seqs,
+                                    outputs_info = [init_state],
+                                    non_sequences = shared_vars,
+                                    name=_p(prefix, '_layers'),
+                                    n_steps=nsteps,
+                                    profile=profile,
+                                    strict=True)
+    rval = [rval]
+    return rval
+
+# LSTM layer (by Waino)
+def param_init_lstm(options, params, prefix='lstm', nin=None, dim=None, hiero=False):
+    if nin == None:
+        nin = options['dim_proj']
+    if dim == None:
+        dim = options['dim_proj']
+    if not hiero:
+        W = numpy.concatenate([norm_weight(nin,dim),
+                               norm_weight(nin,dim)], axis=1)
+        params[_p(prefix,'W')] = W
+        params[_p(prefix,'b')] = numpy.zeros((2 * dim,)).astype('float32')
+    U = numpy.concatenate([ortho_weight(dim),
+                           ortho_weight(dim),   # one more gate
+                           ortho_weight(dim)], axis=1)
+    params[_p(prefix,'U')] = U
+
+    Wx = norm_weight(nin, dim)
+    params[_p(prefix,'Wx')] = Wx
+    Ux = ortho_weight(dim)
+    params[_p(prefix,'Ux')] = Ux
+    params[_p(prefix,'bx')] = numpy.zeros((dim,)).astype('float32')
+
+    return params
+
+def lstm_layer(tparams, state_below, options, prefix='lstm', 
               mask=None, one_step=False, init_state=None, **kwargs):
     if one_step:
         assert init_state, 'previous state must be provided'

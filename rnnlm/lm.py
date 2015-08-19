@@ -380,7 +380,7 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
         init_state = tensor.unbroadcast(tensor.alloc(0., n_samples, dim), 0)
 
     if one_step:
-        rval = _step(*(seqs+[init_state]+shared_vars))
+        rval = _step(*(seqs + [init_state, init_state] + shared_vars))
     else:
         rval, updates = theano.scan(_step, 
                                     sequences=seqs,
@@ -858,18 +858,3 @@ def train(dim_word=100, # word vector dimensionality
 
 if __name__ == '__main__':
     pass
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-

@@ -301,7 +301,8 @@ def param_init_lstm(options, params, prefix='lstm', nin=None, dim=None, hiero=Fa
         W = numpy.concatenate([norm_weight(nin,dim),
                                norm_weight(nin,dim)], axis=1)
         params[_p(prefix,'W')] = W
-        params[_p(prefix,'b')] = numpy.zeros((2 * dim,)).astype('float32')
+        n_gates = 3
+        params[_p(prefix,'b')] = numpy.zeros((n_gates * dim,)).astype('float32')
     U = numpy.concatenate([ortho_weight(dim),
                            ortho_weight(dim),   # one more gate
                            ortho_weight(dim)], axis=1)

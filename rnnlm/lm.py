@@ -1,5 +1,5 @@
 '''
-Build a simple neural machine translation model
+Build a recurrent NNLM.
 '''
 import theano
 import theano.tensor as tensor
@@ -75,8 +75,11 @@ layers = {'ff': ('param_init_fflayer', 'fflayer'),
           }
 
 def get_layer(name):
-    fns = layers[name]
-    return (eval(fns[0]), eval(fns[1]))
+    """ Returns a pair of functions, given layer type. The first one is the init
+        function that initializes the parameters. The second one is the layer
+        function that creates the layer structure. """
+    functions = layers[name]
+    return (eval(functions[0]), eval(functions[1]))
 
 # some utilities
 def ortho_weight(ndim):
@@ -317,6 +320,10 @@ def param_init_lstm(options, params, prefix='lstm', nin=None, dim=None, hiero=Fa
 
 def lstm_layer(tparams, state_below, options, prefix='lstm', 
               mask=None, one_step=False, init_state=None, **kwargs):
+    """ Creates an LSTM layer structure.
+
+    state_below -- parameters from the previous layer
+    """
     if one_step:
         assert init_state, 'previous state must be provided'
 
@@ -343,13 +350,16 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     Ux = tparams[_p(prefix, 'Ux')]
 
     def _step_slice(m_, x_, xx_, h_, h_out_, U, Ux):
-        # Waino: m_ = mask
-        # Waino: x_ = state_below
-        # Waino: xx_= state_belowx
-        # Waino: h_ = h at prev time step
-        # h_out_: ignored
-        # Waino: U  = U  (concatenated Us)
-        # Waino: Ux = Ux
+        """ The step function for theano.scan().
+
+        m_     -- mask
+        x_     -- state_below
+        xx_    -- state_belowx
+        h_     -- h at prev time step
+        h_out_ -- ignored
+        U      -- U  (concatenated Us)
+        Ux     -- Ux
+        """
         preact = tensor.dot(h_, U)
         preact += x_
 
@@ -374,15 +384,17 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     seqs = [mask, state_below_, state_belowx]
     _step = _step_slice
     shared_vars = [tparams[_p(prefix, 'U')], 
-                     tparams[_p(prefix, 'Ux')]]
+                   tparams[_p(prefix, 'Ux')]]
 
     if init_state is None:
         init_state = tensor.unbroadcast(tensor.alloc(0., n_samples, dim), 0)
 
     if one_step:
-        rval = _step(*(seqs+[init_state]+shared_vars))
+	# Concatenate the parameter arrays and call _step() manually.
+	# rval = _step(*(seqs+[init_state]+shared_vars))
+        rval = _step(*(seqs+[init_state, init_state]+shared_vars))
     else:
-        rval, updates = theano.scan(_step, 
+        rval, updates = theano.scan(_step,
                                     sequences=seqs,
                                     outputs_info = [init_state, init_state],
                                     non_sequences = shared_vars,
@@ -393,11 +405,12 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     rval = [rval[1]]
     return rval
 
-# initialize all parameters
 def init_params(options):
+    """ Initializes the parameters in all of the layers. """
     params = OrderedDict()
-    # embedding
+    # word embeddings
     params['Wemb'] = norm_weight(options['n_words'], options['dim_word'])
+    # LSTM / GRU layer
     params = get_layer(options['encoder'])[0](options, params, prefix='encoder', 
                                               nin=options['dim_word'], 
                                               dim=options['dim'])
@@ -654,7 +667,7 @@ def train(dim_word=100, # word vector dimensionality
           validFreq=1000,
           saveFreq=1000, # save the parameters after every saveFreq updates
           sampleFreq=100, # generate some samples after every sampleFreq updates
-          dataset='../data/morph/finnish.clean.train',
+          dataset='../data/morph/finnish.clean.train10k',
           valid_dataset='../data/morph/finnish.clean.test',
           dictionary='../data/morph/morph.vocab',
           use_dropout=False,

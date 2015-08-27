@@ -1,0 +1,2 @@
+file ../data/morph/finnish.clean.test: 1000 sentences, 23355 words, 104 OOVs
+0 zeroprobs, logprob= -55295.9 ppl= 190.612 ppl1= 238.9

@@ -302,9 +302,11 @@ def param_init_lstm(options, params, prefix='lstm', nin=None, dim=None, hiero=Fa
         dim = options['dim_proj']
     if not hiero:
         W = numpy.concatenate([norm_weight(nin,dim),
+                               norm_weight(nin,dim),   # one more gate
                                norm_weight(nin,dim)], axis=1)
         params[_p(prefix,'W')] = W
-        params[_p(prefix,'b')] = numpy.zeros((2 * dim,)).astype('float32')
+        n_gates = 3
+        params[_p(prefix,'b')] = numpy.zeros((n_gates * dim,)).astype('float32')
     U = numpy.concatenate([ortho_weight(dim),
                            ortho_weight(dim),   # one more gate
                            ortho_weight(dim)], axis=1)
@@ -392,7 +394,7 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     if one_step:
 	# Concatenate the parameter arrays and call _step() manually.
 	# rval = _step(*(seqs+[init_state]+shared_vars))
-        rval = _step(*(seqs+[init_state, init_state]+shared_vars))
+        rval = _step(*(seqs + [init_state, init_state] + shared_vars))
     else:
         rval, updates = theano.scan(_step,
                                     sequences=seqs,
@@ -871,18 +873,3 @@ def train(dim_word=100, # word vector dimensionality
 
 if __name__ == '__main__':
     pass
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-

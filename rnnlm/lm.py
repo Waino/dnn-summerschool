@@ -20,6 +20,8 @@ from sklearn.cross_validation import KFold
 
 from data_iterator import TextIterator
 
+from rnnlm import RNNLM
+
 profile = False
 
 
@@ -50,13 +52,6 @@ def dropout_layer(state_before, use_noise, trng):
 def _p(pp, name):
     return '%s_%s'%(pp, name)
 
-# initialize Theano shared variables according to the initial parameters
-def init_tparams(params):
-    tparams = OrderedDict()
-    for kk, pp in params.iteritems():
-        tparams[kk] = theano.shared(params[kk], name=kk)
-    return tparams
-
 # load parameters
 def load_params(path, params):
     pp = numpy.load(path)
@@ -69,32 +64,13 @@ def load_params(path, params):
     return params
 
 # layers: 'name': ('parameter initializer', 'feedforward')
-layers = {'ff': ('param_init_fflayer', 'fflayer'), 
-          'gru': ('param_init_gru', 'gru_layer'),
-          'lstm': ('param_init_lstm', 'lstm_layer'),
-          }
+layers = {'ff': 'fflayer', 
+          'gru': 'gru_layer',
+          'lstm': 'lstm_layer'}
 
 def get_layer(name):
-    """ Returns a pair of functions, given layer type. The first one is the init
-        function that initializes the parameters. The second one is the layer
-        function that creates the layer structure. """
-    functions = layers[name]
-    return (eval(functions[0]), eval(functions[1]))
-
-# some utilities
-def ortho_weight(ndim):
-    W = numpy.random.randn(ndim, ndim)
-    u, s, v = numpy.linalg.svd(W)
-    return u.astype('float32')
-
-def norm_weight(nin,nout=None, scale=0.01, ortho=True):
-    if nout == None:
-        nout = nin
-    if nout == nin and ortho:
-        W = ortho_weight(nin)
-    else:
-        W = scale * numpy.random.randn(nin, nout)
-    return W.astype('float32')
+    """ Returns the layer function that creates the layer structure. """
+    return eval(layers[name])
 
 def tanh(x):
     return tensor.tanh(x)
@@ -175,17 +151,6 @@ def prepare_data(seqs_x, maxlen=None, n_words=30000):
 
     return x, x_mask
 
-# feedforward layer: affine transformation + point-wise nonlinearity
-def param_init_fflayer(options, params, prefix='ff', nin=None, nout=None, ortho=True):
-    if nin == None:
-        nin = options['dim_proj']
-    if nout == None:
-        nout = options['dim_proj']
-    params[_p(prefix,'W')] = norm_weight(nin, nout, scale=0.01, ortho=ortho)
-    params[_p(prefix,'b')] = numpy.zeros((nout,)).astype('float32')
-
-    return params
-
 def fflayer(tparams, state_below, options, prefix='rconv', activ='lambda x: tensor.tanh(x)', **kwargs):
     return eval(activ)(tensor.dot(state_below, tparams[_p(prefix,'W')])+tparams[_p(prefix,'b')])
 
@@ -196,18 +161,18 @@ def param_init_gru(options, params, prefix='gru', nin=None, dim=None, hiero=Fals
     if dim == None:
         dim = options['dim_proj']
     if not hiero:
-        W = numpy.concatenate([norm_weight(nin,dim),
-                               norm_weight(nin,dim)], axis=1)
+        W = numpy.concatenate([normalized_weight(nin,dim),
+                               normalized_weight(nin,dim)], axis=1)
         params[_p(prefix,'W')] = W
         params[_p(prefix,'b')] = numpy.zeros((2 * dim,)).astype('float32')
     # Waino: big-U is concatenation of all U:s, later sliced
-    U = numpy.concatenate([ortho_weight(dim),
-                           ortho_weight(dim)], axis=1)
+    U = numpy.concatenate([orthogonal_weight(dim),
+                           orthogonal_weight(dim)], axis=1)
     params[_p(prefix,'U')] = U
 
-    Wx = norm_weight(nin, dim)
+    Wx = normalized_weight(nin, dim)
     params[_p(prefix,'Wx')] = Wx
-    Ux = ortho_weight(dim)
+    Ux = orthogonal_weight(dim)
     params[_p(prefix,'Ux')] = Ux
     params[_p(prefix,'bx')] = numpy.zeros((dim,)).astype('float32')
 
@@ -293,32 +258,6 @@ def gru_layer(tparams, state_below, options, prefix='gru',
                                     strict=True)
     rval = [rval]
     return rval
-
-# LSTM layer (by Waino)
-def param_init_lstm(options, params, prefix='lstm', nin=None, dim=None, hiero=False):
-    if nin == None:
-        nin = options['dim_proj']
-    if dim == None:
-        dim = options['dim_proj']
-    if not hiero:
-        W = numpy.concatenate([norm_weight(nin,dim),
-                               norm_weight(nin,dim),   # one more gate
-                               norm_weight(nin,dim)], axis=1)
-        params[_p(prefix,'W')] = W
-        n_gates = 3
-        params[_p(prefix,'b')] = numpy.zeros((n_gates * dim,)).astype('float32')
-    U = numpy.concatenate([ortho_weight(dim),
-                           ortho_weight(dim),   # one more gate
-                           ortho_weight(dim)], axis=1)
-    params[_p(prefix,'U')] = U
-
-    Wx = norm_weight(nin, dim)
-    params[_p(prefix,'Wx')] = Wx
-    Ux = ortho_weight(dim)
-    params[_p(prefix,'Ux')] = Ux
-    params[_p(prefix,'bx')] = numpy.zeros((dim,)).astype('float32')
-
-    return params
 
 def lstm_layer(tparams, state_below, options, prefix='lstm', 
               mask=None, one_step=False, init_state=None, **kwargs):
@@ -407,27 +346,6 @@ def lstm_layer(tparams, state_below, options, prefix='lstm',
     rval = [rval[1]]
     return rval
 
-def init_params(options):
-    """ Initializes the parameters in all of the layers. """
-    params = OrderedDict()
-    # word embeddings
-    params['Wemb'] = norm_weight(options['n_words'], options['dim_word'])
-    # LSTM / GRU layer
-    params = get_layer(options['encoder'])[0](options, params, prefix='encoder', 
-                                              nin=options['dim_word'], 
-                                              dim=options['dim'])
-    # readout
-    params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm', 
-                                nin=options['dim'], nout=options['dim_word'], 
-                                ortho=False)
-    params = get_layer('ff')[0](options, params, prefix='ff_logit_prev', 
-                                nin=options['dim_word'], nout=options['dim_word'], 
-                                ortho=False)
-    params = get_layer('ff')[0](options, params, prefix='ff_logit', 
-                                nin=options['dim_word'], nout=options['n_words'])
-
-    return params
-
 # build a training model
 def build_model(tparams, options):
     opt_ret = dict()
@@ -448,19 +366,19 @@ def build_model(tparams, options):
     emb_shifted = tensor.zeros_like(emb)
     emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
     emb = emb_shifted
-    proj = get_layer(options['encoder'])[1](tparams, emb, options,
-                                            prefix='encoder',
-                                            mask=x_mask)
+    proj = get_layer(options['encoder'])(tparams, emb, options,
+                                         prefix='encoder',
+                                         mask=x_mask)
     # Waino: unwraps the whole layer output 
     proj_h = proj[0]
 
     # compute word probabilities
-    logit_lstm = get_layer('ff')[1](tparams, proj_h, options, 
-                                    prefix='ff_logit_lstm', activ='linear')
-    logit_prev = get_layer('ff')[1](tparams, emb, options, 
-                                    prefix='ff_logit_prev', activ='linear')
+    logit_lstm = get_layer('ff')(tparams, proj_h, options, 
+                                 prefix='ff_logit_lstm', activ='linear')
+    logit_prev = get_layer('ff')(tparams, emb, options, 
+                                 prefix='ff_logit_prev', activ='linear')
     logit = tensor.tanh(logit_lstm+logit_prev)
-    logit = get_layer('ff')[1](tparams, logit, options, prefix='ff_logit', activ='linear')
+    logit = get_layer('ff')(tparams, logit, options, prefix='ff_logit', activ='linear')
     logit_shp = logit.shape
     probs = tensor.nnet.softmax(logit.reshape([logit_shp[0]*logit_shp[1], logit_shp[2]]))
 
@@ -483,20 +401,20 @@ def build_sampler(tparams, options, trng):
     emb = tensor.switch(y[:,None] < 0, 
                         tensor.alloc(0., 1, tparams['Wemb'].shape[1]), 
                         tparams['Wemb'][y])
-    proj = get_layer(options['encoder'])[1](tparams, emb, options, 
-                                            prefix='encoder', 
-                                            mask=None, 
-                                            one_step=True, 
-                                            init_state=init_state)
+    proj = get_layer(options['encoder'])(tparams, emb, options, 
+                                         prefix='encoder', 
+                                         mask=None, 
+                                         one_step=True, 
+                                         init_state=init_state)
     next_state = proj[0]
 
-    logit_lstm = get_layer('ff')[1](tparams, next_state, options, 
-                                    prefix='ff_logit_lstm', activ='linear')
-    logit_prev = get_layer('ff')[1](tparams, emb, options, 
-                                    prefix='ff_logit_prev', activ='linear')
+    logit_lstm = get_layer('ff')(tparams, next_state, options, 
+                                 prefix='ff_logit_lstm', activ='linear')
+    logit_prev = get_layer('ff')(tparams, emb, options, 
+                                 prefix='ff_logit_prev', activ='linear')
     logit = tensor.tanh(logit_lstm+logit_prev)
-    logit = get_layer('ff')[1](tparams, logit, options, 
-                               prefix='ff_logit', activ='linear')
+    logit = get_layer('ff')(tparams, logit, options, 
+                            prefix='ff_logit', activ='linear')
     next_probs = tensor.nnet.softmax(logit)
     next_sample = trng.multinomial(pvals=next_probs).argmax(1)
 
@@ -705,12 +623,14 @@ def train(dim_word=100, # word vector dimensionality
                          maxlen=maxlen)
 
     print 'Building model'
-    params = init_params(model_options)
+
+    rnnlm = RNNLM(model_options)
+    params = rnnlm.params
     # reload parameters
     if reload_ and os.path.exists(saveto):
         params = load_params(saveto, params)
 
-    tparams = init_tparams(params)
+    tparams = rnnlm.theano_params
 
     trng, use_noise, \
           x, x_mask, \

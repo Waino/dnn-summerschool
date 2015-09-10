@@ -1,15 +1,18 @@
+
+
 import numpy
 import theano
 import theano.tensor as tensor
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 class TextSampler(object):
-    """Neural Network Language Model Sampler
+    """Neural network language model sampler
 
     A Theano function that generates text using a neural network language
     model.
     """
 
-    def __init__(self, network, options, trng):
+    def __init__(self, network, options):
         """Creates the neural network architecture.
 
         :type network: RNNLM
@@ -20,6 +23,10 @@ class TextSampler(object):
         """
 
         self.options = options
+        self.trng = RandomStreams(1234)
+
+
+        # Create the network structure.
 
         # x: 1 x 1
         # y is the previous word in 1-of-V encoding.
@@ -32,21 +39,28 @@ class TextSampler(object):
                             tensor.alloc(0., 1, network.theano_params['Wemb'].shape[1]), 
                             network.theano_params['Wemb'][y])
 
-        proj = network.encoder_layer.get(network.theano_params,
-                                         emb,
-                                         mask=None, 
-                                         one_step=True,
-                                         init_state=init_state)
-        next_state = proj[0]
-
-        logit = network.ff_layer.get(network.theano_params, next_state, emb, activ='lambda x: x')
+        proj = network.encoder_layer.create_structure(network.theano_params,
+                                                      emb,
+                                                      mask=None, 
+                                                      one_step=True,
+                                                      init_state=init_state)
+        logit = network.ff_layer.create_structure(network.theano_params,
+                                                  proj,
+                                                  emb,
+                                                  activ='lambda x: x')
         next_probs = tensor.nnet.softmax(logit)
-        next_sample = trng.multinomial(pvals=next_probs).argmax(1)
+        next_sample = self.trng.multinomial(pvals=next_probs).argmax(1)
+
+
+        # Compile the Theano function.
 
         # next word probability
         inps = [y, init_state]
-        outs = [next_probs, next_sample, next_state]
+        outs = [next_probs, next_sample, proj]
+
+        print 'Building text sampler.'
         self.function = theano.function(inps, outs, name='f_next', profile=self.options['profile'])
+        print 'Done.'
 
     def generate(self, maxlen=30, argmax=False):
         """ Generates a text sample.

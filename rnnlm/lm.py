@@ -1,9 +1,8 @@
-'''
-Build a recurrent NNLM.
-'''
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import theano
 import theano.tensor as tensor
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 import cPickle as pkl
 import numpy
@@ -25,36 +24,9 @@ from modeltrainer import ModelTrainer
 from textsampler import TextSampler
 
 
-# push parameters to Theano shared variables
-def zipp(params, tparams):
-    for kk, vv in params.iteritems():
-        tparams[kk].set_value(vv)
-
-# pull parameters from Theano shared variables
-def unzip(zipped):
-    new_params = OrderedDict()
-    for kk, vv in zipped.iteritems():
-        new_params[kk] = vv.get_value()
-    return new_params
-
-# get the list of parameters: Note that tparams must be OrderedDict
-def itemlist(tparams):
-    return [vv for kk, vv in tparams.iteritems()]
-
 # make prefix-appended name
 def _p(pp, name):
     return '%s_%s'%(pp, name)
-
-# load parameters
-def load_params(path, params):
-    pp = numpy.load(path)
-    for kk, vv in params.iteritems():
-        if kk not in pp:
-            warnings.warn('%s is not in the archive'%kk)
-            continue
-        params[kk] = pp[kk]
-
-    return params
 
 # layers: 'name': ('parameter initializer', 'feedforward')
 layers = {'ff': 'fflayer', 
@@ -265,101 +237,12 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
 
     return numpy.array(probs)
 
-# optimizers
-# name(hyperp, tparams, grads, inputs (list), cost) = f_grad_shared, f_update
-def adam(lr, tparams, grads, inp, cost, options):
-    gshared = [theano.shared(p.get_value() * 0., 
-                             name='%s_grad'%k) 
-               for k, p in tparams.iteritems()]
-    gsup = [(gs, g) for gs, g in zip(gshared, grads)]
-
-    f_grad_shared = theano.function(inp, cost, updates=gsup, profile=options['profile'])
-
-    lr0 = 0.0002
-    b1 = 0.1
-    b2 = 0.001
-    e = 1e-8
-
-    updates = []
-
-    i = theano.shared(numpy.float32(0.))
-    i_t = i + 1.
-    fix1 = 1. - b1**(i_t)
-    fix2 = 1. - b2**(i_t)
-    lr_t = lr0 * (tensor.sqrt(fix2) / fix1)
-
-    for p, g in zip(tparams.values(), gshared):
-        m = theano.shared(p.get_value() * 0.)
-        v = theano.shared(p.get_value() * 0.)
-        m_t = (b1 * g) + ((1. - b1) * m)
-        v_t = (b2 * tensor.sqr(g)) + ((1. - b2) * v)
-        g_t = m_t / (tensor.sqrt(v_t) + e)
-        p_t = p - (lr_t * g_t)
-        updates.append((m, m_t))
-        updates.append((v, v_t))
-        updates.append((p, p_t))
-    updates.append((i, i_t))
-
-    f_update = theano.function([lr], [], updates=updates, 
-                               on_unused_input='ignore', profile=options['profile'])
-
-    return f_grad_shared, f_update
-
-def adadelta(lr, tparams, grads, inp, cost, options):
-    zipped_grads = [theano.shared(p.get_value() * numpy.float32(0.), 
-                                  name='%s_grad'%k) 
-                    for k, p in tparams.iteritems()]
-    running_up2 = [theano.shared(p.get_value() * numpy.float32(0.), 
-                                 name='%s_rup2'%k) 
-                   for k, p in tparams.iteritems()]
-    running_grads2 = [theano.shared(p.get_value() * numpy.float32(0.), 
-                                    name='%s_rgrad2'%k) 
-                      for k, p in tparams.iteritems()]
-
-    zgup = [(zg, g) for zg, g in zip(zipped_grads, grads)]
-    rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2)) for rg2, g in zip(running_grads2, grads)]
-
-    f_grad_shared = theano.function(inp, cost, updates=zgup+rg2up, profile=options['profile'])
-    
-    updir = [-tensor.sqrt(ru2 + 1e-6) / tensor.sqrt(rg2 + 1e-6) * zg for zg, ru2, rg2 in zip(zipped_grads, running_up2, running_grads2)]
-    ru2up = [(ru2, 0.95 * ru2 + 0.05 * (ud ** 2)) for ru2, ud in zip(running_up2, updir)]
-    param_up = [(p, p + ud) for p, ud in zip(itemlist(tparams), updir)]
-
-    f_update = theano.function([lr], [], updates=ru2up+param_up, on_unused_input='ignore', profile=options['profile'])
-
-    return f_grad_shared, f_update
-
-def rmsprop(lr, tparams, grads, inp, cost, options):
-    zipped_grads = [theano.shared(p.get_value() * numpy.float32(0.), name='%s_grad'%k) for k, p in tparams.iteritems()]
-    running_grads = [theano.shared(p.get_value() * numpy.float32(0.), name='%s_rgrad'%k) for k, p in tparams.iteritems()]
-    running_grads2 = [theano.shared(p.get_value() * numpy.float32(0.), name='%s_rgrad2'%k) for k, p in tparams.iteritems()]
-
-    zgup = [(zg, g) for zg, g in zip(zipped_grads, grads)]
-    rgup = [(rg, 0.95 * rg + 0.05 * g) for rg, g in zip(running_grads, grads)]
-    rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2)) for rg2, g in zip(running_grads2, grads)]
-
-    f_grad_shared = theano.function(inp, cost, updates=zgup+rgup+rg2up, profile=options['profile'])
-
-    updir = [theano.shared(p.get_value() * numpy.float32(0.), name='%s_updir'%k) for k, p in tparams.iteritems()]
-    updir_new = [(ud, 0.9 * ud - 1e-4 * zg / tensor.sqrt(rg2 - rg ** 2 + 1e-4)) for ud, zg, rg, rg2 in zip(updir, zipped_grads, running_grads, running_grads2)]
-    param_up = [(p, p + udn[1]) for p, udn in zip(itemlist(tparams), updir_new)]
-    f_update = theano.function([lr], [], updates=updir_new+param_up, on_unused_input='ignore', profile=options['profile'])
-
-    return f_grad_shared, f_update
-
-def sgd(lr, tparams, grads, x, mask, y, cost, options):
-    gshared = [theano.shared(p.get_value() * 0., name='%s_grad'%k) for k, p in tparams.iteritems()]
-    gsup = [(gs, g) for gs, g in zip(gshared, grads)]
-
-    f_grad_shared = theano.function([x, mask, y], cost, updates=gsup, profile=options['profile'])
-
-    pup = [(p, p - lr * g) for p, g in zip(itemlist(tparams), gshared)]
-    f_update = theano.function([lr], [], updates=pup, profile=options['profile'])
-
-    return f_grad_shared, f_update
-
-
-def train(dim_word=100, # word vector dimensionality
+def train(train_path,
+          validation_path,
+          dictionary_path,
+          model_path,
+          reload_state=False,
+          dim_word=100, # word vector dimensionality
           dim=1000, # the number of LSTM units
           encoder='lstm',
           patience=10,
@@ -374,15 +257,9 @@ def train(dim_word=100, # word vector dimensionality
           optimizer='rmsprop', 
           batch_size = 16,
           valid_batch_size = 16,
-          saveto='model.npz',
           validFreq=1000,
           saveFreq=1000, # save the parameters after every saveFreq updates
-          sampleFreq=100, # generate some samples after every sampleFreq updates
-          dataset='../data/morph/finnish.clean.train10k',
-          valid_dataset='../data/morph/finnish.clean.test',
-          dictionary='../data/morph/morph.vocab',
-          use_dropout=False,
-          reload_=False,
+          sampleFreq=100, # generate some text samples after every sampleFreq updates
           profile=False):
 
     # Model options
@@ -390,7 +267,7 @@ def train(dim_word=100, # word vector dimensionality
 
     worddicts = dict()
     worddicts_r = dict()
-    with open(dictionary, 'rb') as f:
+    with open(dictionary_path, 'rb') as f:
         for (i, line) in enumerate(f):
             word = line.strip()
             code = i + 2
@@ -398,80 +275,32 @@ def train(dim_word=100, # word vector dimensionality
             worddicts[word] = code
 
     # reload options
-    if reload_ and os.path.exists(saveto):
-        with open('%s.pkl'%saveto, 'rb') as f:
+    if reload_state and os.path.exists(model_path):
+        with open('%s.pkl' % model_path, 'rb') as f:
             models_options = pkl.load(f)
 
-    print 'Loading data'
-    train = TextIterator(dataset, 
+    print '### Loading data.'
+
+    train = TextIterator(train_path, 
                          worddicts,
                          n_words_source=n_words, 
                          batch_size=batch_size,
                          maxlen=maxlen)
-    valid = TextIterator(valid_dataset, 
+    valid = TextIterator(validation_path, 
                          worddicts,
                          n_words_source=n_words, 
                          batch_size=valid_batch_size,
                          maxlen=maxlen)
 
-    print 'Building model'
+    print '### Building neural network.'
 
     rnnlm = RNNLM(model_options)
-    params = rnnlm.params
-    # reload parameters
-    if reload_ and os.path.exists(saveto):
-        params = load_params(saveto, params)
+    trainer = ModelTrainer(rnnlm, optimizer, model_options)
+    sampler = TextSampler(rnnlm, model_options)
 
-    tparams = rnnlm.theano_params
+    print '### Training neural network.'
 
-    trng = RandomStreams(1234)
-    
-    trainer = ModelTrainer(rnnlm, model_options)
-    inps = [trainer.x, trainer.x_mask]
-
-    print 'Buliding text sampler.'
-    sampler = TextSampler(rnnlm, model_options, trng)
-    print 'Done.'
-
-    # before any regularizer
-    print 'Building f_log_probs...',
-    f_log_probs = theano.function(inps, trainer.cost, profile=model_options['profile'])
-    print 'Done'
-
-    cost = trainer.cost.mean()
-
-    if decay_c > 0.:
-        decay_c = theano.shared(numpy.float32(decay_c), name='decay_c')
-        weight_decay = 0.
-        for kk, vv in tparams.iteritems():
-            weight_decay += (vv ** 2).sum()
-        weight_decay *= decay_c
-        cost += weight_decay
-
-    # after any regularizer
-    print 'Building f_cost...',
-    f_cost = theano.function(inps, cost, profile=model_options['profile'])
-    print 'Done'
-
-    print 'Computing gradient...',
-    grads = tensor.grad(cost, wrt=itemlist(tparams))
-    print 'Done'
-    print 'Building f_grad...',
-    f_grad = theano.function(inps, grads, profile=model_options['profile'])
-    print 'Done'
-
-    lr = tensor.scalar(name='lr')
-    print 'Building optimizers...',
-    f_grad_shared, f_update = eval(optimizer)(lr, tparams, grads, inps, cost, model_options)
-    print 'Done'
-
-    print 'Optimization'
-
-    history_errs = []
-    # reload history
-    if reload_ and os.path.exists(saveto):
-        history_errs = list(numpy.load(saveto)['history_errs'])
-    best_p = None
+    best_params = None
     bad_count = 0
 
     if validFreq == -1:
@@ -498,8 +327,8 @@ def train(dim_word=100, # word vector dimensionality
                 continue
 
             ud_start = time.time()
-            cost = f_grad_shared(x, x_mask)
-            f_update(lrate)
+            cost = trainer.f_grad_shared(x, x_mask)
+            trainer.f_update(lrate)
             ud = time.time() - ud_start
 
             if numpy.isnan(cost) or numpy.isinf(cost):
@@ -510,17 +339,11 @@ def train(dim_word=100, # word vector dimensionality
                 print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud
 
             if numpy.mod(uidx, saveFreq) == 0:
-                print 'Saving...',
-
-                #import ipdb; ipdb.set_trace()
-
-                if best_p != None:
-                    params = best_p
-                else:
-                    params = unzip(tparams)
-                numpy.savez(saveto, history_errs=history_errs, **params)
-                pkl.dump(model_options, open('%s.pkl'%saveto, 'wb'))
-                print 'Done'
+                # Save the best parameters, or the current state if best_params
+                # is None.
+                rnnlm.save_params(best_params)
+                # Save the training options.
+                pkl.dump(model_options, open('%s.pkl' % model_path, 'wb'))
 
             if numpy.mod(uidx, sampleFreq) == 0:
                 # FIXME: random selection?
@@ -540,12 +363,12 @@ def train(dim_word=100, # word vector dimensionality
             if numpy.mod(uidx, validFreq) == 0:
                 valid_errs = pred_probs(f_log_probs, prepare_data, model_options, valid)
                 valid_err = valid_errs.mean()
-                history_errs.append(valid_err)
+                rnnlm.error_history.append(valid_err)
 
-                if uidx == 0 or valid_err <= numpy.array(history_errs).min():
-                    best_p = unzip(tparams)
+                if uidx == 0 or valid_err <= numpy.array(error_history).min():
+                    best_params = rnnlm.get_param_values()
                     bad_counter = 0
-                if len(history_errs) > patience and valid_err >= numpy.array(history_errs)[:-patience].min():
+                if len(rnnlm.error_history) > patience and valid_err >= numpy.array(rnnlm.error_history)[:-patience].min():
                     bad_counter += 1
                     if bad_counter > patience:
                         print 'Early Stop!'
@@ -562,20 +385,17 @@ def train(dim_word=100, # word vector dimensionality
         if estop:
             break
 
-    if best_p is not None: 
-        zipp(best_p, tparams)
+    if best_params is not None:
+        rnnlm.set_param_values(best_params)
 
     valid_err = pred_probs(f_log_probs, prepare_data, model_options, valid).mean()
 
     print 'Valid ', valid_err
 
-    params = copy.copy(best_p)
-    numpy.savez(saveto, zipped_params=best_p, 
-                history_errs=history_errs, 
+    params = copy.copy(best_params)
+    numpy.savez(model_path, zipped_params=best_params, 
+                error_history=rnnlm.error_history, 
                 **params)
 
     return valid_err
 
-
-if __name__ == '__main__':
-    pass

@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 from collections import OrderedDict
 import numpy
 import theano
@@ -6,11 +9,11 @@ import theano.tensor as tensor
 from paramfunctions import orthogonal_weight, normalized_weight
 
 class LSTMLayer(object):
-    def __init__(self, options):
-        """
-        Long short-term memory layer for a recurrent neural network.
+    """Long Short-Term Memory Layer
+    """
 
-        Currently just initializes the parameters.
+    def __init__(self, options):
+        """Initializes the parameters for a LSTM layer of a recurrent neural network.
 
         :type options: dict
         :param options: a dictionary of training options
@@ -18,8 +21,8 @@ class LSTMLayer(object):
 
         self.options = options
 
-        # Create the parameters.
-        self.params = OrderedDict()
+        # Initialize the parameters.
+        self.init_params = OrderedDict()
 
         nin = self.options['dim_word']
         dim = self.options['dim']
@@ -27,30 +30,36 @@ class LSTMLayer(object):
                                normalized_weight(nin, dim),
                                normalized_weight(nin, dim)],
                               axis=1)
-        self.params['encoder_W'] = W
+        self.init_params['encoder_W'] = W
 
         n_gates = 3
-        self.params['encoder_b'] = numpy.zeros((n_gates * dim,)).astype('float32')
+        self.init_params['encoder_b'] = numpy.zeros((n_gates * dim,)).astype('float32')
 
         U = numpy.concatenate([orthogonal_weight(dim),
                                orthogonal_weight(dim),
                                orthogonal_weight(dim)],
                               axis=1)
-        self.params['encoder_U'] = U
+        self.init_params['encoder_U'] = U
 
         Wx = normalized_weight(nin, dim)
-        self.params['encoder_Wx'] = Wx
+        self.init_params['encoder_Wx'] = Wx
 
         Ux = orthogonal_weight(dim)
-        self.params['encoder_Ux'] = Ux
-        self.params['encoder_bx'] = numpy.zeros((dim,)).astype('float32')
+        self.init_params['encoder_Ux'] = Ux
+        self.init_params['encoder_bx'] = numpy.zeros((dim,)).astype('float32')
 
-    def get(self, theano_params, state_below,
-            mask=None, one_step=False, init_state=None, **kwargs):
-        """ Creates an LSTM layer structure.
+    def create_structure(self, theano_params, state_below,
+                         mask=None, one_step=False, init_state=None):
+        """Creates the LSTM layer structure.
 
-        state_below -- parameters from the previous layer
+        :type theano_params: dict
+        :param theano_params: shared Theano variables
+
+        :type state_below: theano.tensor.var.TensorVariable
+        :param state_below: symbolic matrix that describes the output of the
+        previous layer
         """
+
         if one_step:
             assert init_state, 'previous state must be provided'
 
@@ -109,7 +118,6 @@ class LSTMLayer(object):
             return h, h_out #, r, u, preact, preactx
 
         seqs = [mask, state_below_, state_belowx]
-        _step = _step_slice
         shared_vars = [theano_params['encoder_U'], 
                        theano_params['encoder_Ux']]
 
@@ -117,18 +125,18 @@ class LSTMLayer(object):
             init_state = tensor.unbroadcast(tensor.alloc(0., n_samples, dim), 0)
 
         if one_step:
-            # Concatenate the parameter arrays and call _step() manually.
-            # rval = _step(*(seqs+[init_state]+shared_vars))
-            rval = _step(*(seqs + [init_state, init_state] + shared_vars))
+            # When generating text, we perform just one step. Concatenate the
+            # parameter arrays and call _step_slice() manually.
+            rval = _step_slice(*(seqs + [init_state, init_state] + shared_vars))
         else:
-            rval, updates = theano.scan(_step,
+            rval, updates = theano.scan(_step_slice,
                                         sequences=seqs,
                                         outputs_info = [init_state, init_state],
                                         non_sequences = shared_vars,
-                                        name='encoder__layers',
+                                        name='encoder_layers',
                                         n_steps=nsteps,
                                         profile=self.options['profile'],
                                         strict=True)
-        rval = [rval[1]]
+        rval = rval[1]
         return rval
 

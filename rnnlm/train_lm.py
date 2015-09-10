@@ -24,7 +24,7 @@ def main(job_id, params):
 
 if __name__ == '__main__':
     main(0, {
-        'model': ['model-train10k-lstm.npz'],
+        'model': ['/l/senarvi/theano-rnnlm/model-train10k-lstm.npz'],
         'dim_word': [256],
         'dim': [1024],
         'n-words': [30000], 
